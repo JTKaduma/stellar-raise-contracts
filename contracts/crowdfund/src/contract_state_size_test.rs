@@ -8,11 +8,7 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{
-    contract, contractimpl,
-    testutils::Address as _,
-    Address, Env, String, Vec,
-};
+use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env, String, Vec};
 
 use crate::{
     contract_state_size::{
