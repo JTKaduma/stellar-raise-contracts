@@ -63,8 +63,6 @@
 //!                               ──► Ok / Err::FeeTooHigh
 //! ```
 
-#![no_std]
-
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /// Minimum allowed campaign goal (in the token's smallest unit).
@@ -178,7 +176,7 @@ pub fn compute_progress_bps(total_raised: i128, goal: i128) -> u32 {
     if goal <= 0 {
         return 0;
     }
-    let raw = (total_raised * PROGRESS_BPS_SCALE) / goal;
+    let raw = total_raised.saturating_mul(PROGRESS_BPS_SCALE) / goal;
     if raw > PROGRESS_BPS_SCALE {
         MAX_PROGRESS_BPS
     } else {
