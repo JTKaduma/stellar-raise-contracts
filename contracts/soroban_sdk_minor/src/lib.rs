@@ -34,7 +34,6 @@ impl SorobanSdkMinor {
     }
 
     /// @notice Verifies that `user` has authorized the current call.
-    /// @dev    Demonstrates the v22 `require_auth()` pattern for access control.
     /// @param  user The address whose authorization is being checked.
     /// @return `true` if authorization succeeds (panics otherwise).
     pub fn check_auth(_env: Env, user: Address) -> bool {

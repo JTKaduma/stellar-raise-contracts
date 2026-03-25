@@ -37,8 +37,7 @@ mod contract_state_size_test;
 pub mod contribute_error_handling;
 #[cfg(test)]
 mod contribute_error_handling_tests;
-#[cfg(test)]
-mod proptest_generator_boundary;
+pub mod proptest_generator_boundary;
 #[cfg(test)]
 mod proptest_generator_boundary_tests;
 #[cfg(test)]
@@ -148,6 +147,12 @@ pub enum ContractError {
     Overflow = 6,
     /// Returned by `refund_single` when the caller has no contribution to refund.
     NothingToRefund = 7,
+    /// Returned by `contribute` when `amount` is zero.
+    ZeroAmount = 8,
+    /// Returned by `contribute` when `amount` is below `min_contribution`.
+    BelowMinimum = 9,
+    /// Returned by `contribute` when the campaign is not active.
+    CampaignNotActive = 10,
 }
 
 #[contractclient(name = "NftContractClient")]
@@ -260,9 +265,19 @@ impl CrowdfundContract {
     /// Contribute tokens to the campaign.
     ///
     /// The contributor must authorize the call. Contributions are rejected
-    /// after the deadline has passed.
+    /// after the deadline has passed or if the campaign is not active.
     pub fn contribute(env: Env, contributor: Address, amount: i128) -> Result<(), ContractError> {
         contributor.require_auth();
+
+        // Guard: campaign must be active.
+        let status: Status = env.storage().instance().get(&DataKey::Status).unwrap();
+        if status != Status::Active {
+            return Err(ContractError::CampaignNotActive);
+        }
+
+        if amount == 0 {
+            return Err(ContractError::ZeroAmount);
+        }
 
         let min_contribution: i128 = env
             .storage()
@@ -270,7 +285,7 @@ impl CrowdfundContract {
             .get(&DataKey::MinContribution)
             .unwrap();
         if amount < min_contribution {
-            panic!("amount below minimum");
+            return Err(ContractError::BelowMinimum);
         }
 
         let deadline: u64 = env.storage().instance().get(&DataKey::Deadline).unwrap();
@@ -635,7 +650,7 @@ impl CrowdfundContract {
     ///
     /// **This function is deprecated as of contract v3 and will be removed in a future version.**
     ///
-    /// Use [`refund_single`] instead. The pull-based model is preferred because:
+    /// Use `refund_single` instead. The pull-based model is preferred because:
     /// - It avoids unbounded iteration over the contributors list (gas safety).
     /// - Each contributor controls their own refund timing.
     /// - It is composable with scripts and automation tooling.
@@ -734,13 +749,31 @@ impl CrowdfundContract {
         creator.require_auth();
 
         let token_address: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let _token_client = token::Client::new(&env, &token_address);
+        let token_client = token::Client::new(&env, &token_address);
 
-        let _contributors: Vec<Address> = env
+        let contributors: Vec<Address> = env
             .storage()
             .persistent()
             .get(&DataKey::Contributors)
-            .unwrap();
+            .unwrap_or_else(|| Vec::new(&env));
+
+        for contributor in contributors.iter() {
+            let contribution_key = DataKey::Contribution(contributor.clone());
+            let amount: i128 = env
+                .storage()
+                .persistent()
+                .get(&contribution_key)
+                .unwrap_or(0);
+            if amount > 0 {
+                env.storage().persistent().set(&contribution_key, &0i128);
+                refund_single_transfer(
+                    &token_client,
+                    &env.current_contract_address(),
+                    &contributor,
+                    amount,
+                );
+            }
+        }
 
         env.storage().instance().set(&DataKey::TotalRaised, &0i128);
         env.storage()
